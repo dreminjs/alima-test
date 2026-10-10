@@ -1,11 +1,24 @@
 {
-  "name": "root",
+  "name": "app",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
   "private": true,
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "api:dev": "lerna run start:dev --scope=api",
+    "client:dev": "lerna run dev --scope=client",
+    "client:build": "lerna run build --scope=client",
+    "api:build": "lerna run build --scope=api",
+    "api:test": "lerna run test:e2e --scope=api"
+  },
+  "dependencies": {
+    "react-router": "^8.4.0"
+  },
   "workspaces": [
     "packages/*"
-  ],
-  "dependencies": {},
-  "devDependencies": {
-    "lerna": "^10.1.0"
-  }
+  ]
 }
