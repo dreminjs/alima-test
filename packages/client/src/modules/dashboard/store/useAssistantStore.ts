@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { create } from 'zustand';
 import type {
   AssistantCategory,
   AssistantResponse,
@@ -32,144 +32,127 @@ export interface AssistantState {
   theme: 'dark' | 'light';
 }
 
-type Listener = () => void;
+export interface AssistantActions {
+  setPrompt: (prompt: string) => void;
+  setContext: (context: string) => void;
+  setCategory: (category: AssistantCategory) => void;
+  clearInput: () => void;
+  toggleHistory: (open?: boolean) => void;
+  toggleTheme: () => void;
+  dismissError: () => void;
+  loadHistory: () => Promise<void>;
+  loadHealth: () => Promise<void>;
+  selectHistoryItem: (item: HistoryItem) => void;
+  clearHistory: () => Promise<void>;
+  submitPrompt: (customPrompt?: string, customContext?: string) => Promise<void>;
+  retry: () => void;
+}
 
-class AssistantStore {
-  private state: AssistantState;
-  private listeners: Set<Listener> = new Set();
+export type AssistantStore = AssistantState & AssistantActions;
 
-  constructor() {
-    const savedTheme = (typeof window !== 'undefined'
-      ? (localStorage.getItem('team_ai_theme') as 'dark' | 'light' | null)
-      : null) || 'dark';
-
-    this.state = {
-      prompt: '',
-      context: '',
-      category: 'general',
-      currentResponse: null,
-      activePromptLabel: '',
-      isLoading: false,
-      error: null,
-      lastPayload: null,
-      history: [],
-      isHistoryOpen: false,
-      selectedHistoryId: null,
-      health: null,
-      theme: savedTheme,
-    };
-
-    if (typeof document !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', savedTheme);
-    }
+const getInitialTheme = (): 'dark' | 'light' => {
+  const savedTheme = (typeof window !== 'undefined'
+    ? (localStorage.getItem('team_ai_theme') as 'dark' | 'light' | null)
+    : null) || 'dark';
+    
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-theme', savedTheme);
   }
+  return savedTheme;
+};
 
-  public getState = (): AssistantState => {
-    return this.state;
-  };
+export const useAssistantStore = create<AssistantStore>((set, get) => ({
+  prompt: '',
+  context: '',
+  category: 'general',
+  currentResponse: null,
+  activePromptLabel: '',
+  isLoading: false,
+  error: null,
+  lastPayload: null,
+  history: [],
+  isHistoryOpen: false,
+  selectedHistoryId: null,
+  health: null,
+  theme: getInitialTheme(),
 
-  public subscribe = (listener: Listener): (() => void) => {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  };
-
-  private setState(partial: Partial<AssistantState>) {
-    this.state = { ...this.state, ...partial };
-    this.listeners.forEach((listener) => listener());
-  }
-
-  // Actions
-  public setPrompt = (prompt: string) => {
-    this.setState({ prompt });
-  };
-
-  public setContext = (context: string) => {
-    this.setState({ context });
-  };
-
-  public setCategory = (category: AssistantCategory) => {
-    this.setState({ category });
-  };
-
-  public clearInput = () => {
-    this.setState({ prompt: '', context: '', error: null });
-  };
-
-  public toggleHistory = (open?: boolean) => {
-    this.setState({
-      isHistoryOpen: open !== undefined ? open : !this.state.isHistoryOpen,
-    });
-  };
-
-  public toggleTheme = () => {
-    const nextTheme = this.state.theme === 'dark' ? 'light' : 'dark';
+  setPrompt: (prompt) => set({ prompt }),
+  
+  setContext: (context) => set({ context }),
+  
+  setCategory: (category) => set({ category }),
+  
+  clearInput: () => set({ prompt: '', context: '', error: null }),
+  
+  toggleHistory: (open) => set((state) => ({
+    isHistoryOpen: open !== undefined ? open : !state.isHistoryOpen,
+  })),
+  
+  toggleTheme: () => {
+    const state = get();
+    const nextTheme = state.theme === 'dark' ? 'light' : 'dark';
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('team_ai_theme', nextTheme);
     }
     if (typeof document !== 'undefined') {
       document.documentElement.setAttribute('data-theme', nextTheme);
     }
-    this.setState({ theme: nextTheme });
-  };
-
-  public dismissError = () => {
-    this.setState({ error: null });
-  };
-
-  public loadHistory = async () => {
+    set({ theme: nextTheme });
+  },
+  
+  dismissError: () => set({ error: null }),
+  
+  loadHistory: async () => {
     const history = await fetchHistory();
-    this.setState({ history });
-  };
-
-  public loadHealth = async () => {
+    set({ history });
+  },
+  
+  loadHealth: async () => {
     const health = await fetchHealth();
-    this.setState({ health });
-  };
-
-  public selectHistoryItem = (item: HistoryItem) => {
-    this.setState({
-      selectedHistoryId: item.id,
+    set({ health });
+  },
+  
+  selectHistoryItem: (item) => set({
+    selectedHistoryId: item.id,
+    category: item.category,
+    activePromptLabel: item.prompt,
+    currentResponse: {
+      id: item.id,
+      response: item.response,
       category: item.category,
-      activePromptLabel: item.prompt,
-      currentResponse: {
-        id: item.id,
-        response: item.response,
-        category: item.category,
-        model: item.model,
-        durationMs: item.durationMs,
-        timestamp: item.timestamp,
-        redisStored: true,
-      },
-      error: null,
-      isHistoryOpen: false,
-    });
-  };
-
-  public clearHistory = async () => {
+      model: item.model,
+      durationMs: item.durationMs,
+      timestamp: item.timestamp,
+      redisStored: true,
+    },
+    error: null,
+    isHistoryOpen: false,
+  }),
+  
+  clearHistory: async () => {
     const success = await clearHistoryApi();
     if (success) {
-      this.setState({
+      set({
         history: [],
         selectedHistoryId: null,
       });
-    } 11
-  };
-
-  public submitPrompt = async (customPrompt?: string, customContext?: string) => {
-    const promptToSend = (customPrompt ?? this.state.prompt).trim();
-    const contextToSend = (customContext ?? this.state.context).trim();
+    }
+  },
+  
+  submitPrompt: async (customPrompt?: string, customContext?: string) => {
+    const state = get();
+    const promptToSend = (customPrompt ?? state.prompt).trim();
+    const contextToSend = (customContext ?? state.context).trim();
 
     if (!promptToSend) return;
 
     const payload = {
       prompt: promptToSend,
-      category: this.state.category,
+      category: state.category,
       context: contextToSend,
     };
 
-    this.setState({
+    set({
       error: null,
       isLoading: true,
       selectedHistoryId: null,
@@ -179,32 +162,27 @@ class AssistantStore {
 
     try {
       const result = await askAssistant(payload.prompt, payload.category, payload.context);
-      this.setState({
+      set({
         currentResponse: result,
         isLoading: false,
       });
-      await this.loadHistory();
+      get().loadHistory();
     } catch (err) {
-      this.setState({
+      set({
         error: (err as Error).message || 'Не удалось получить ответ от AI-сервиса',
         isLoading: false,
       });
     }
-  };
-
-  public retry = () => {
-    if (this.state.lastPayload) {
-      this.submitPrompt(this.state.lastPayload.prompt, this.state.lastPayload.context);
+  },
+  
+  retry: () => {
+    const state = get();
+    if (state.lastPayload) {
+      get().submitPrompt(state.lastPayload.prompt, state.lastPayload.context);
     }
-  };
-}
+  },
+}));
 
-export const assistantStore = new AssistantStore();
-
-export function useAssistantStore<T>(selector: (state: AssistantState) => T): T {
-  return useSyncExternalStore(
-    assistantStore.subscribe,
-    () => selector(assistantStore.getState()),
-    () => selector(assistantStore.getState())
-  );
-}
+// Export a constant object to match the previous class instance API
+// where components were doing `assistantStore.setPrompt(...)`
+export const assistantStore = useAssistantStore.getState();
